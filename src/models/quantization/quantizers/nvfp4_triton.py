@@ -470,7 +470,6 @@ def eden_1x16s_fp4_kernel(
     amax_ptr,
     output_ptr,
     n_elements: tl.constexpr,
-    hadamard_dim: tl.constexpr,
     scale_override: tl.constexpr,
     group_size: tl.constexpr,
     four_over_six: tl.constexpr,
@@ -532,12 +531,9 @@ def eden_1x16s_fp4_kernel(
             alt_s_dec_b_e4m3,
         )
     
-    # Calculate EDEN scale
-    x_scaled = tl.reshape(best_x_scaled, (BLOCK_SIZE // hadamard_dim, hadamard_dim))
-    x_fp4 = tl.reshape(best_x_fp4, (BLOCK_SIZE // hadamard_dim, hadamard_dim))
-    
-    num = tl.sum(x_scaled * x_scaled, axis=-1, keep_dims=True)
-    denom = tl.sum(x_scaled * x_fp4, axis=-1, keep_dims=True)
+    # Calculate EDEN scale    
+    num = tl.sum(best_x_scaled * best_x_scaled, axis=-1, keep_dims=True)
+    denom = tl.sum(best_x_scaled * best_x_fp4, axis=-1, keep_dims=True)
     
     correction = tl.where(
         denom == 0.0,
@@ -546,8 +542,7 @@ def eden_1x16s_fp4_kernel(
     )
     
     # Apply EDEN scale
-    scales = tl.reshape(best_s_dec_b_e4m3, (BLOCK_SIZE // hadamard_dim, hadamard_dim // group_size))
-    corrected_scales = tl.reshape(scales * correction, (BLOCK_SIZE // group_size, 1))
+    corrected_scales = best_s_dec_b_e4m3 * correction
     
     bitscales = tl.cast(corrected_scales.to(tl.float8e4nv), tl.uint8, bitcast=True)
     prevscale = tl.cast((bitscales - 1), tl.float8e4nv, bitcast=True).to(tl.float32)
