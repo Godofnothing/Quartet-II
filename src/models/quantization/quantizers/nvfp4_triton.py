@@ -470,6 +470,7 @@ def eden_1x16s_fp4_kernel(
     amax_ptr,
     output_ptr,
     n_elements: tl.constexpr,
+    hadamard_dim: tl.constexpr,
     scale_override: tl.constexpr,
     group_size: tl.constexpr,
     four_over_six: tl.constexpr,
