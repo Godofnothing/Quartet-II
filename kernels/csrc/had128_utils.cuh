@@ -111,7 +111,7 @@ inline CUtensorMap create_xT_fp4_tensor_map(const __nv_fp4x2_storage_t* src, int
     CUtensorMap tensor_map{};
     // rank is the number of dimensions of the array.
     constexpr uint32_t rank = 2;
-    uint64_t size[rank] = {(unsigned)N, (unsigned)M};
+    uint64_t size[rank] = {(unsigned)N / 2, (unsigned)M};
     // The stride is the number of bytes to traverse from the first element of one
     // row to the next. It must be a multiple of 16.
     uint64_t stride[rank - 1] = {N / 2u};
@@ -190,6 +190,9 @@ __device__ __forceinline__ void eden_rounding(
             // is worse ?!
             // constexpr unsigned MASK = 0b1111'1111'1111u << 20u;
             float m3_scale = __uint_as_float((__float_as_uint(scale) & MASK));
+            if (m3_scale < 1.17549435e-38f) {
+                m3_scale = 0.0f;
+            }
             float factor = m3_scale > 0 ? reciprocal_approximate_ftz(m3_scale) : 0.f;
 
             group_n_vec converted;

@@ -229,9 +229,10 @@ class Quartet_II_fn(torch.autograd.Function):
 
 
 class Quartet_II_linear(torch.nn.Linear):
-    def __init__(self, *args, four_over_six=True, **kwargs):
+    def __init__(self, *args, four_over_six=True, disable_backward_quant=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.mode = NVFP4QuantMode.FOUR_SIX if four_over_six else NVFP4QuantMode.RNE
+        self.disable_backward_quant = disable_backward_quant
         self.weight_abs_max = None
         # initialize hadamard matrix.
         # *if* we are on meta device, initialization will be deferred until we move to real device (handled in _apply)
@@ -248,4 +249,4 @@ class Quartet_II_linear(torch.nn.Linear):
         return self
 
     def forward(self, x, disable_backward_quant=False, input_abs_max=None):
-        return Quartet_II_fn.apply(x, self.weight[...], self.had, self.mode, disable_backward_quant, self.weight_abs_max, input_abs_max, self.scratch_amax)
+        return Quartet_II_fn.apply(x, self.weight[...], self.had, self.mode, self.disable_backward_quant or disable_backward_quant, self.weight_abs_max, input_abs_max, self.scratch_amax)
