@@ -3,6 +3,7 @@ from flashinfer import mm_fp4
 
 from scipy.linalg import hadamard
 from .quant import quant_fp4, rht128_quant_eden, rht128_requant, NVFP4QuantMode
+from .pseudoquant import Quartet_II_pseudoquant_fn
 import nvtx
 import contextlib
 
@@ -249,4 +250,9 @@ class Quartet_II_linear(torch.nn.Linear):
         return self
 
     def forward(self, x, disable_backward_quant=False, input_abs_max=None):
-        return Quartet_II_fn.apply(x, self.weight[...], self.had, self.mode, self.disable_backward_quant or disable_backward_quant, self.weight_abs_max, input_abs_max, self.scratch_amax)
+        major, minor = torch.cuda.get_device_capability(x.device)
+        
+        if major >= 10:
+            return Quartet_II_fn.apply(x, self.weight[...], self.had, self.mode, self.disable_backward_quant or disable_backward_quant, self.weight_abs_max, input_abs_max, self.scratch_amax)
+        else:
+            return Quartet_II_pseudoquant_fn.apply(x, self.weight[...], self.had, self.disable_backward_quant or disable_backward_quant, self.mode == NVFP4QuantMode.FOUR_SIX)
