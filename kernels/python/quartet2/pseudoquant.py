@@ -356,7 +356,7 @@ class Quartet_II_pseudoquant_fn(torch.autograd.Function):
                 input_fp4.T,
                 None,
             )
-            return grad_input, grad_weight, None, None
+            return grad_input, grad_weight, None, None, None
         
         # EW
         e_ht_fp4 = eden_1x16s_fp4_kernel_wrapper(grad_output, had, backward_scale_override, 16)
