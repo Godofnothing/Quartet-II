@@ -154,8 +154,11 @@ class Quartet_II_fn(torch.autograd.Function):
     #@torch.compile(dynamic=False)
     @staticmethod
     def forward(ctx, input, weight, had, mode: NVFP4QuantMode, disable_backward_quant: bool = False, weight_amax: torch.Tensor = None, input_amax: torch.Tensor = None, scratch_amax: torch.Tensor = None): 
-        ctx.batch = input.shape[0]
-        ctx.seq = input.shape[1]
+        ctx.orig_shape = input.shape
+        
+        flat_input = input.reshape(-1, input.shape[-1])
+        
+        ctx.batch = flat_input.shape[0]
         ctx.in_dim = weight.shape[1]
         ctx.out_dim = weight.shape[0]
         ctx.disable_backward_quant = disable_backward_quant
@@ -163,14 +166,12 @@ class Quartet_II_fn(torch.autograd.Function):
 
         autocast_enabled = torch.is_autocast_enabled("cuda")
         if autocast_enabled:
-            input = input.to(torch.bfloat16)
+            flat_input = flat_input.to(torch.bfloat16)
             weight = weight.to(torch.bfloat16)
 
-        assert input.dtype == torch.bfloat16
+        assert flat_input.dtype == torch.bfloat16
 
         forward_scale_override = 1.0
-
-        flat_input = input.reshape(-1, input.shape[-1])
 
         with nvtx_annotate("Abs-max", color="red"):
             if input_amax is None:
@@ -189,7 +190,7 @@ class Quartet_II_fn(torch.autograd.Function):
                 input_fp4.micro_scales, weight_fp4.micro_scales,
                 alpha=input_fp4.tensor_scale * weight_fp4.tensor_scale)
 
-        return res.reshape(ctx.batch, ctx.seq, ctx.out_dim)
+        return res.reshape(ctx.orig_shape[:-1] + (ctx.out_dim,),)
 
     #@torch.compile(dynamic=False)
     @staticmethod
@@ -211,7 +212,7 @@ class Quartet_II_fn(torch.autograd.Function):
             wr = _dq_fp4(wfp4, ws, wm)
             grad_input = flat_grad_output @ wr
             grad_weight = flat_grad_output.T @ xr
-            return grad_input.reshape(ctx.batch, ctx.seq, ctx.in_dim), grad_weight, None, None, None, None, None, None
+            return grad_input.reshape(ctx.orig_shape), grad_weight, None, None, None, None, None, None
 
         # EW
         with nvtx_annotate("Quant", color="yellow"):
@@ -226,7 +227,7 @@ class Quartet_II_fn(torch.autograd.Function):
             xt_ht_fp4, xt_ht_ms, xt_ht_ts = rht128_requant(x=xfp4, x_group_scales=xs, x_tensor_scale=xm, h=had[:16, :], scale_override=backward_scale_override, scratch_amax=ctx.scratch_amax)
         with nvtx_annotate("Matmul", color="blue"):
             grad_weight = _fp4_mm(et_ht_fp4, xt_ht_fp4, et_ht_ms, xt_ht_ms, alpha=et_ht_ts*xt_ht_ts)
-        return grad_input.reshape(ctx.batch, ctx.seq, ctx.in_dim), grad_weight, None, None, None, None, None, None
+        return grad_input.reshape(ctx.orig_shape), grad_weight, None, None, None, None, None, None
 
 
 class Quartet_II_linear(torch.nn.Linear):

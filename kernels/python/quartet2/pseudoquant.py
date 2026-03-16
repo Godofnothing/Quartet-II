@@ -302,27 +302,30 @@ def rerotate_hadamard(hadamard_matrix):
 class Quartet_II_pseudoquant_fn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, weight, had, disable_backward_quant: bool, four_over_six: bool):
-        ctx.batch = input.shape[0]
-        ctx.seq = input.shape[1]
+        ctx.orig_shape = input.shape
+        
+        flat_input = input.reshape(-1, input.shape[-1])
+        
+        ctx.batch = flat_input.shape[0]
         ctx.in_dim = weight.shape[1]
         ctx.out_dim = weight.shape[0]
         ctx.disable_backward_quant = disable_backward_quant
         
         autocast_enabled = torch.is_autocast_enabled("cuda")
         if autocast_enabled:
-            input = input.to(torch.bfloat16)
+            flat_input = flat_input.to(torch.bfloat16)
             weight = weight.to(torch.bfloat16)
 
-        assert input.dtype == torch.bfloat16
+        assert flat_input.dtype == torch.bfloat16
         assert weight.dtype == torch.bfloat16
         
         forward_scale_override = 1.0
         
-        input_fp4 = rtn_1x16s_fp4_kernel_wrapper(input, scale_override=forward_scale_override, group_size=16, four_over_six=four_over_six)
+        input_fp4 = rtn_1x16s_fp4_kernel_wrapper(flat_input, scale_override=forward_scale_override, group_size=16, four_over_six=four_over_six)
         weight_fp4 = rtn_1x16s_fp4_kernel_wrapper(weight, scale_override=forward_scale_override, group_size=16, four_over_six=four_over_six)
 
         ctx.save_for_backward(input_fp4, weight_fp4, had)
-        return F.linear(input_fp4, weight_fp4)
+        return F.linear(input_fp4, weight_fp4).reshape(ctx.orig_shape[:-1] + (ctx.out_dim,),)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -334,8 +337,8 @@ class Quartet_II_pseudoquant_fn(torch.autograd.Function):
         if autocast_enabled:
             grad_output = grad_output.to(torch.bfloat16)
         
-        input_fp4 = input_fp4.reshape(ctx.batch * ctx.seq, ctx.in_dim)
-        grad_output = grad_output.reshape(ctx.batch * ctx.seq, ctx.out_dim)
+        input_fp4 = input_fp4.reshape(ctx.batch, ctx.in_dim)
+        grad_output = grad_output.reshape(ctx.batch, ctx.out_dim)
         
         # Re-randomize the rotation
         had = rerotate_hadamard(had)
@@ -346,7 +349,7 @@ class Quartet_II_pseudoquant_fn(torch.autograd.Function):
                 grad_output,
                 weight_fp4.T,
                 None,
-            ).view(ctx.batch, ctx.seq, ctx.in_dim)
+            ).view(ctx.batch, ctx.in_dim)
             
             grad_weight = F.linear(
                 grad_output.T,
@@ -363,7 +366,7 @@ class Quartet_II_pseudoquant_fn(torch.autograd.Function):
             e_ht_fp4,
             weight_tht_fp4,
             None,
-        ).view(ctx.batch, ctx.seq, ctx.in_dim)
+        ).view(ctx.batch, ctx.in_dim)
 
         # EtX
         e_tht_fp4 = eden_1x16s_fp4_kernel_wrapper(grad_output.T, had, backward_scale_override, 16)
@@ -375,4 +378,4 @@ class Quartet_II_pseudoquant_fn(torch.autograd.Function):
             None,
         )
         
-        return grad_input, grad_weight, None, None, None
+        return grad_input.reshape(ctx.orig_shape), grad_weight, None, None, None
