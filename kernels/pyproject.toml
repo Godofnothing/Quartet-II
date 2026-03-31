@@ -11,7 +11,7 @@ authors = [
 dependencies = [
     "flashinfer-python>=0.6.3",     # nvfp4 gemm
     "scipy>=1.17.0",                # hadamard
-    "torch>=2.10.0",
+    "torch>=2.9.0",
     "nvtx",                         # TODO make this dev only
 ]
 
